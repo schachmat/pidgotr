@@ -3,4 +3,4 @@
 *.o
 *.so
 *.so.*
-*/cscope.out
+*cscope.out
