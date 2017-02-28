@@ -1,8 +1,8 @@
 include config.mk
 
-SRC = pidgin-gotr.c
+SRC = pidgin-gotr.c gtk-ui.c
 LIB = pidgin-gotr.so.${MAJOR}.${MINOR}
-INC = 
+INC = gtk-ui.h
 OBJ = ${SRC:.c=.o}
 
 all: options cscope ${LIB}
