@@ -19,18 +19,48 @@
 
 #define PURPLE_PLUGINS
 
-#include <glib.h>
+#define PLUGIN_ID "gtk-gotr"
 
-#include "notify.h"
-#include "plugin.h"
-#include "version.h"
+#include <stdarg.h>
+
+#include <glib.h>
+#include <gtk/gtk.h>
+
+#include <pidgin/gtkplugin.h>
+#include <libpurple/debug.h>
+#include <libpurple/version.h>
+
+#include <gotr.h>
+#include "gtk-ui.h"
+
+static PidginPluginUiInfo ui_config = { gotrg_ui_create_conf_widget };
+
+static void
+gotrp_log(const char *format, ...)
+{
+	va_list ap;
+
+	va_start(ap, format);
+	purple_debug_info(PLUGIN_ID, format, ap);
+	va_end(ap);
+}
 
 static gboolean
 plugin_load(PurplePlugin *plugin)
 {
-	purple_notify_message(plugin, PURPLE_NOTIFY_MSG_INFO, "Hi there!",
-	                      "This is the gotr plugin", NULL, NULL, NULL);
+	gotr_set_log_fn(&gotrp_log);
+	if (!gotr_init())
+		return FALSE;
 
+	//TODO: setup signal handlers.
+	purple_debug_info(PLUGIN_ID, "plugin loaded\n");
+	return TRUE;
+}
+
+static gboolean
+plugin_unload(PurplePlugin *plugin)
+{
+	purple_debug_info(PLUGIN_ID, "plugin unloaded\n");
 	return TRUE;
 }
 
@@ -39,14 +69,14 @@ static PurplePluginInfo info = {
 	PURPLE_MAJOR_VERSION,
 	PURPLE_MINOR_VERSION,
 	PURPLE_PLUGIN_STANDARD,
-	NULL,
+	PIDGIN_UI,
 	0,
 	NULL,
 	PURPLE_PRIORITY_DEFAULT,
 
-	"core-gotr",
+	PLUGIN_ID,
 	"Group OTR",
-	GOTR_VERSION_MAJOR "." GOTR_VERSION_MINOR,
+	GOTRP_VERSION_MAJOR "." GOTRP_VERSION_MINOR,
 
 	"GOTR Plugin",
 	"GOTR Plugin",
@@ -54,12 +84,10 @@ static PurplePluginInfo info = {
 	"https://github.com/schachmat/gotr",
 
 	plugin_load,
-	NULL,
+	plugin_unload,
 	NULL,
 
-	NULL,
-	NULL,
-	NULL,
+	&ui_config,
 	NULL,
 	NULL,
 	NULL,

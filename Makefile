@@ -21,7 +21,7 @@ ${OBJ}: ${INC} config.mk
 
 ${LIB}: ${OBJ}
 	@echo CC $<
-	@${CC} ${LDFLAGS} -o ${@} ${OBJ}
+	@${CC} -o ${@} ${OBJ} ${LDFLAGS}
 
 cscope: ${SRC} ${INC}
 	@echo cScope
