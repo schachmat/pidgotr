@@ -22,11 +22,15 @@
 #define PLUGIN_ID "gtk-gotr"
 
 #include <stdarg.h>
+#include <stdio.h>
+#include <string.h>
 
 #include <glib.h>
 #include <gtk/gtk.h>
 
 #include <pidgin/gtkplugin.h>
+#include <libpurple/account.h>
+#include <libpurple/conversation.h>
 #include <libpurple/debug.h>
 #include <libpurple/version.h>
 
@@ -35,24 +39,183 @@
 
 static PidginPluginUiInfo ui_config = { gotrg_ui_create_conf_widget };
 
+/** GOTR plugin handle */
+static PurplePlugin *gotrph = NULL;
+
 static void
 gotrp_log(const char *format, ...)
 {
 	va_list ap;
 
 	va_start(ap, format);
-	purple_debug_info(PLUGIN_ID, format, ap);
+	purple_debug_warning(PLUGIN_ID, format, ap);
 	va_end(ap);
+}
+
+static void
+sending_im(PurpleAccount *account,
+           const char *receiver,
+           char **message)
+{
+	purple_debug_info(PLUGIN_ID, "sending_im\n");
+}
+
+static gboolean
+receiving_im(PurpleAccount *account,
+             char **sender,
+             char **message,
+             PurpleConversation *conv,
+             int *flags)
+{
+	purple_debug_info(PLUGIN_ID, "receiving_im: (flags %d) %s->%s: %s\n",
+	                  *flags, conv ? conv->title : "(NULL)", *sender, *message);
+	/**TODO: decrypt if possible */
+
+	return FALSE;
+}
+static void
+sending_chat(PurpleAccount *account,
+             char **message,
+             int id)
+{
+	purple_debug_info(PLUGIN_ID, "sending_chat\n");
+}
+
+static gboolean
+receiving_chat(PurpleAccount *account,
+               char **sender,
+               char **message,
+               PurpleConversation *conv,
+               int *flags)
+{
+	if (*flags & PURPLE_MESSAGE_DELAYED) {
+		purple_debug_misc(PLUGIN_ID,
+		                  "ignoring received delayed message from %s in %s "
+		                  "(probably replay from pidgin history): %s\n",
+		                  *sender,
+		                  conv->title,
+		                  *message);
+		return FALSE;
+	}
+
+	/* ignore own messages */
+	if (*flags & PURPLE_MESSAGE_SEND)
+		return FALSE;
+
+	purple_debug_info(PLUGIN_ID, "receiving_chat: (flags %d) %s->%s: %s\n",
+	                  *flags, conv->title, *sender, *message);
+	/**TODO: decrypt if possible */
+
+	return FALSE;
+}
+
+static void
+chat_user_joined(PurpleConversation *conv,
+                 const char *name,
+                 PurpleConvChatBuddyFlags flags,
+                 gboolean new_arrival)
+{
+	const size_t blen = 2048;
+	char buf[blen];
+	PurpleConversation *im_conv;
+
+	/* we don't need to handle ourselves joining the chat -> ignore signal */
+	/**TODO: check if we can improve key exchange if the joining user also
+	 * starts sending messages instead of waiting for other users. Use the
+	 * strcmp version of the line to accept this signal for already existing
+	 * other users in a chat we just joined ourselves. */
+//	if (0 == strcmp(PURPLE_CONV_CHAT(conv)->nick, name))
+	if (!new_arrival)
+		return;
+
+	if (blen <= snprintf(buf, blen, "%s/%s", conv->name, name)) {
+		purple_debug_error(PLUGIN_ID, "chat_user_joined: buffer too small\n");
+		return;
+	}
+
+	im_conv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM,
+	                                                buf,
+	                                                conv->account);
+	if (!im_conv)
+		im_conv = purple_conversation_new(PURPLE_CONV_TYPE_IM,
+		                                  conv->account,
+		                                  buf);
+	purple_conversation_set_logging(im_conv, FALSE);
+	purple_conv_im_send_with_flags(PURPLE_CONV_IM(im_conv),
+	                               new_arrival ? "hi newcomer" : "ancient one",
+	                               PURPLE_MESSAGE_INVISIBLE);
+
+	purple_debug_info(PLUGIN_ID, "chat_user_joined: %s->%s\n",
+	                  conv->title, name);
+}
+
+static void
+chat_user_left(PurpleConversation *conv,
+               const char *name,
+               const char *reason)
+{
+	purple_debug_info(PLUGIN_ID, "chat_user_left: %s->%s\n", conv->title, name);
+}
+
+static void
+chat_joined(PurpleConversation *conv)
+{
+	purple_debug_info(PLUGIN_ID, "chat_joined: %s\n", conv->title);
+}
+
+static void
+chat_left(PurpleConversation *conv)
+{
+	purple_debug_info(PLUGIN_ID, "chat_left: %s\n", conv->title);
+}
+
+static void
+conv_created(PurpleConversation *conv)
+{
+	purple_debug_warning(PLUGIN_ID, "conv_created: name: %s\n", conv->name);
+	purple_debug_warning(PLUGIN_ID, "conv_created: title: %s\n", conv->title);
+	purple_debug_warning(PLUGIN_ID, "conv_created: type: %d\n", conv->type);
+}
+
+static void
+conv_deleting(PurpleConversation *conv)
+{
+	purple_debug_warning(PLUGIN_ID, "conv_deleting: name: %s\n", conv->name);
+	purple_debug_warning(PLUGIN_ID, "conv_deleting: title: %s\n", conv->title);
+	purple_debug_warning(PLUGIN_ID, "conv_deleting: type: %d\n", conv->type);
 }
 
 static gboolean
 plugin_load(PurplePlugin *plugin)
 {
+	void *conv = purple_conversations_get_handle();
+
 	gotr_set_log_fn(&gotrp_log);
 	if (!gotr_init())
 		return FALSE;
 
-	//TODO: setup signal handlers.
+	purple_signal_connect(conv, "sending-im-msg", plugin,
+	                      PURPLE_CALLBACK(sending_im), NULL);
+	purple_signal_connect(conv, "receiving-im-msg", plugin,
+	                      PURPLE_CALLBACK(receiving_im), NULL);
+	purple_signal_connect(conv, "sending-chat-msg", plugin,
+	                      PURPLE_CALLBACK(sending_chat), NULL);
+	purple_signal_connect(conv, "receiving-chat-msg", plugin,
+	                      PURPLE_CALLBACK(receiving_chat), NULL);
+	purple_signal_connect(conv, "chat-buddy-joined", plugin,
+	                      PURPLE_CALLBACK(chat_user_joined), NULL);
+	purple_signal_connect(conv, "chat-buddy-left", plugin,
+	                      PURPLE_CALLBACK(chat_user_left), NULL);
+	purple_signal_connect(conv, "chat-joined", plugin,
+	                      PURPLE_CALLBACK(chat_joined), NULL);
+	purple_signal_connect(conv, "chat-left", plugin,
+	                      PURPLE_CALLBACK(chat_left), NULL);
+	purple_signal_connect(conv, "conversation-created", plugin,
+	                      PURPLE_CALLBACK(conv_created), NULL);
+	purple_signal_connect(conv, "deleting-conversation", plugin,
+	                      PURPLE_CALLBACK(conv_deleting), NULL);
+
+	gotrph = plugin;
 	purple_debug_info(PLUGIN_ID, "plugin loaded\n");
 	return TRUE;
 }
@@ -60,6 +223,29 @@ plugin_load(PurplePlugin *plugin)
 static gboolean
 plugin_unload(PurplePlugin *plugin)
 {
+	void *conv = purple_conversations_get_handle();
+
+	purple_signal_disconnect(conv, "sending-im-msg", gotrph,
+	                         PURPLE_CALLBACK(sending_im));
+	purple_signal_disconnect(conv, "receiving-im-msg", gotrph,
+	                         PURPLE_CALLBACK(receiving_im));
+	purple_signal_disconnect(conv, "sending-chat-msg", gotrph,
+	                         PURPLE_CALLBACK(sending_chat));
+	purple_signal_disconnect(conv, "receiving-chat-msg", gotrph,
+	                         PURPLE_CALLBACK(receiving_chat));
+	purple_signal_disconnect(conv, "chat-buddy-joined", plugin,
+	                         PURPLE_CALLBACK(chat_user_joined));
+	purple_signal_disconnect(conv, "chat-buddy-left", plugin,
+	                         PURPLE_CALLBACK(chat_user_left));
+	purple_signal_disconnect(conv, "chat-joined", plugin,
+	                         PURPLE_CALLBACK(chat_joined));
+	purple_signal_disconnect(conv, "chat-left", plugin,
+	                         PURPLE_CALLBACK(chat_left));
+	purple_signal_disconnect(conv, "conversation-created", plugin,
+	                         PURPLE_CALLBACK(conv_created));
+	purple_signal_disconnect(conv, "deleting-conversation", plugin,
+	                         PURPLE_CALLBACK(conv_deleting));
+
 	purple_debug_info(PLUGIN_ID, "plugin unloaded\n");
 	return TRUE;
 }
