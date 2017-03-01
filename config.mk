@@ -15,5 +15,4 @@ LDFLAGS = -g -shared -Wl,-soname,pidgin-gotr.so.${MAJOR} ${LIBS}
 
 # compiler and linker
 CC = cc
-CSCOPE = cscope
 DOXYGEN = doxygen
