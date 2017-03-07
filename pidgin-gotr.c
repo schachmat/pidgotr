@@ -66,6 +66,71 @@ gotrp_send_user_cb(void *room_closure,
                    void *user_closure,
                    const char *b64_msg)
 {
+	const size_t blen = 2048;
+	char buf[blen];
+	gboolean logging;
+	PurpleConversation *conv = room_closure;
+	PurpleConvChat *chat_conv;
+	PurpleConversation *im_conv;
+
+	if (!(chat_conv = PURPLE_CONV_CHAT(conv))) {
+		purple_debug_error(PLUGIN_ID, "send_user_cb: broken room_closure\n");
+		return 0;
+	}
+
+	if (blen <= snprintf(buf,
+	                     blen,
+	                     "%s/%s",
+	                     conv->name,
+	                     (char *)user_closure)) {
+		purple_debug_error(PLUGIN_ID, "send_user_cb: buffer too small\n");
+		return 0;
+	}
+
+	im_conv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM,
+	                                                buf,
+	                                                conv->account);
+	if (!im_conv) {
+		/* We create a new IM (=1on1) conversation, but don't want it to be
+		 * shown to the user. Thus we hide the conversation by temporarily
+		 * changing the hide_new setting and emitting the received-im-msg which
+		 * will create the conversation for us inside the hidden window. */
+		const char *old = purple_prefs_get_string(PIDGIN_PREFS_ROOT
+		                                          "/conversations/im/hide_new");
+		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
+		                        "always");
+		purple_signal_emit(purple_conversations_get_handle(),
+		                   "received-im-msg",
+		                   conv->account,
+		                   buf,
+		                   "lol ignore me",
+		                   NULL,
+		                   PURPLE_MESSAGE_INVISIBLE);
+		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
+		                        old);
+//		im_conv = purple_conversation_new(PURPLE_CONV_TYPE_IM,
+//		                                  conv->account,
+//		                                  buf);
+
+		im_conv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM,
+		                                                buf,
+		                                                conv->account);
+		if (!im_conv) {
+			purple_debug_error(PLUGIN_ID,
+			                   "failed to create hidden conversation with %s\n",
+			                   buf);
+			return 0;
+		}
+	}
+
+	/* temporarily disable logging for hidden messages */
+	logging = purple_conversation_is_logging(im_conv);
+	purple_conversation_set_logging(im_conv, FALSE);
+	purple_conv_im_send_with_flags(PURPLE_CONV_IM(im_conv),
+	                               b64_msg,
+	                               PURPLE_MESSAGE_INVISIBLE);
+	purple_conversation_set_logging(im_conv, logging);
+
 	return 1;
 }
 
