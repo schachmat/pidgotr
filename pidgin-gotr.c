@@ -232,12 +232,6 @@ chat_user_joined(PurpleConversation *conv,
                  PurpleConvChatBuddyFlags flags,
                  gboolean new_arrival)
 {
-	const size_t blen = 2048;
-	char buf[blen];
-	PurpleConversation *im_conv;
-//	PidginConversation *pg_conv;
-//	PidginWindow *pg_win;
-
 	/* we don't need to handle ourselves joining the chat -> ignore signal */
 	/**TODO: check if we can improve key exchange if the joining user also
 	 * starts sending messages instead of waiting for other users. Use the
@@ -246,58 +240,6 @@ chat_user_joined(PurpleConversation *conv,
 //	if (0 == strcmp(PURPLE_CONV_CHAT(conv)->nick, name))
 	if (!new_arrival)
 		return;
-
-	if (blen <= snprintf(buf, blen, "%s/%s", conv->name, name)) {
-		purple_debug_error(PLUGIN_ID, "chat_user_joined: buffer too small\n");
-		return;
-	}
-
-	im_conv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM,
-	                                                buf,
-	                                                conv->account);
-	if (!im_conv) {
-		/* We create a new IM (=1on1) conversation, but don't want it to be
-		 * shown to the user. Thus we hide the conversation by temporarily
-		 * changing the hide_new setting and emitting the received-im-msg which
-		 * will create the conversation for us inside the hidden window. */
-		const char *old = purple_prefs_get_string(PIDGIN_PREFS_ROOT
-		                                          "/conversations/im/hide_new");
-		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
-		                        "always");
-		purple_signal_emit(purple_conversations_get_handle(),
-		                   "received-im-msg",
-		                   conv->account,
-		                   buf,
-		                   "lol ignore me",
-		                   NULL,
-		                   PURPLE_MESSAGE_INVISIBLE);
-		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
-		                        old);
-//		im_conv = purple_conversation_new(PURPLE_CONV_TYPE_IM,
-//		                                  conv->account,
-//		                                  buf);
-
-		im_conv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM,
-		                                                buf,
-		                                                conv->account);
-		if (!im_conv) {
-			purple_debug_error(PLUGIN_ID,
-			                   "failed to create hidden conversation with %s\n",
-			                   buf);
-			return;
-		}
-
-//		if (PIDGIN_IS_PIDGIN_CONVERSATION(im_conv) &&
-//		    (pg_conv = PIDGIN_CONVERSATION(im_conv)) &&
-//		    (pg_win = pidgin_conv_get_window(pg_conv))) {
-//			purple_debug_info(PLUGIN_ID, "hiding new conversation window\n");
-//			pidgin_conv_window_hide(pg_win);
-//		}
-	}
-	purple_conversation_set_logging(im_conv, FALSE);
-	purple_conv_im_send_with_flags(PURPLE_CONV_IM(im_conv),
-	                               new_arrival ? "hi newcomer" : "ancient one",
-	                               PURPLE_MESSAGE_INVISIBLE);
 
 	purple_debug_info(PLUGIN_ID, "chat_user_joined: %s->%s\n",
 	                  conv->title, name);
