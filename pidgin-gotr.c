@@ -45,6 +45,8 @@ static PidginPluginUiInfo ui_config = { gotrg_ui_create_conf_widget };
 /** GOTR plugin handle */
 static PurplePlugin *gotrph = NULL;
 
+static GHashTable *gotrp_rooms = NULL;
+
 static void
 gotrp_log_cb(const char *format, ...)
 {
@@ -197,12 +199,37 @@ receiving_im(PurpleAccount *account,
 
 	return FALSE;
 }
+
 static void
 sending_chat(PurpleAccount *account,
              char **message,
              int id)
 {
-	purple_debug_info(PLUGIN_ID, "sending_chat\n");
+	struct gotr_chatroom *room;
+	PurpleConversation *conv;
+	PurpleConnection *gc;
+
+	purple_debug_info(PLUGIN_ID, "sending_chat: %s\n", *message);
+
+	if (!(gc = purple_account_get_connection(account))) {
+		purple_debug_error(PLUGIN_ID, "failed to derive connection\n");
+		return;
+	}
+
+	if (!(conv = purple_find_chat(gc, id))) {
+		purple_debug_error(PLUGIN_ID, "failed to find conversation by id\n");
+		return;
+	}
+
+	if (!(room = g_hash_table_lookup(gotrp_rooms, conv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return;
+	}
+
+	if (gotr_send(room, *message)) {
+		free(*message);
+		*message = NULL;
+	}
 }
 
 static gboolean
@@ -212,6 +239,8 @@ receiving_chat(PurpleAccount *account,
                PurpleConversation *conv,
                int *flags)
 {
+	struct gotr_chatroom *room;
+
 	if (*flags & PURPLE_MESSAGE_DELAYED) {
 		purple_debug_misc(PLUGIN_ID,
 		                  "ignoring received delayed message from %s in %s "
@@ -228,9 +257,13 @@ receiving_chat(PurpleAccount *account,
 
 	purple_debug_info(PLUGIN_ID, "receiving_chat: (flags %d) %s->%s: %s\n",
 	                  *flags, conv->title, *sender, *message);
-	/**TODO: decrypt if possible */
 
-	return FALSE;
+	if (!(room = g_hash_table_lookup(gotrp_rooms, conv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return FALSE;
+	}
+
+	return gotr_receive(room, *message);
 }
 
 static void
@@ -263,13 +296,36 @@ chat_user_left(PurpleConversation *conv,
 static void
 chat_joined(PurpleConversation *conv)
 {
+	struct gotr_chatroom *room;
+
 	purple_debug_info(PLUGIN_ID, "chat_joined: %s\n", conv->title);
+
+	room = gotr_join(&gotrp_send_all_cb,
+	                 &gotrp_send_user_cb,
+	                 &gotrp_receive_user_cb,
+	                 conv,
+	                 NULL); /* autogen privkey for now */
+
+	if (!room) {
+		purple_debug_error(PLUGIN_ID, "got NULL room when joining");
+		return;
+	}
+
+	if (!g_hash_table_insert(gotrp_rooms, conv, room)) {
+		/* should not happen */
+		purple_debug_warning(PLUGIN_ID, "chat conversation replaced");
+	}
 }
 
 static void
 chat_left(PurpleConversation *conv)
 {
 	purple_debug_info(PLUGIN_ID, "chat_left: %s\n", conv->title);
+
+	if (!g_hash_table_remove(gotrp_rooms, conv)) {
+		purple_debug_error(PLUGIN_ID, "could not find room to leave");
+		return;
+	}
 }
 
 static void
@@ -288,6 +344,12 @@ conv_deleting(PurpleConversation *conv)
 	purple_debug_warning(PLUGIN_ID, "conv_deleting: type: %d\n", conv->type);
 }
 
+static void
+destroy_room(gpointer room)
+{
+	gotr_leave((struct gotr_chatroom *)room);
+}
+
 static gboolean
 plugin_load(PurplePlugin *plugin)
 {
@@ -296,6 +358,14 @@ plugin_load(PurplePlugin *plugin)
 	gotr_set_log_fn(&gotrp_log_cb);
 	if (!gotr_init()) {
 		purple_debug_error(PLUGIN_ID, "failed to initialize libgotr\n");
+		return FALSE;
+	}
+
+	if (!(gotrp_rooms = g_hash_table_new_full(&g_direct_hash,
+	                                          &g_direct_equal,
+	                                          NULL,
+	                                          &destroy_room))) {
+		purple_debug_error(PLUGIN_ID, "failed to create room hash table\n");
 		return FALSE;
 	}
 
@@ -329,6 +399,8 @@ static gboolean
 plugin_unload(PurplePlugin *plugin)
 {
 	void *conv = purple_conversations_get_handle();
+
+	g_hash_table_destroy(gotrp_rooms);
 
 	purple_signal_disconnect(conv, "sending-im-msg", gotrph,
 	                         PURPLE_CALLBACK(sending_im));
