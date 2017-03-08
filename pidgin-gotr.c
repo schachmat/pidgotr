@@ -280,6 +280,9 @@ chat_user_joined(PurpleConversation *conv,
                  PurpleConvChatBuddyFlags flags,
                  gboolean new_arrival)
 {
+	struct gotrp_room *pr;
+	struct gotr_user *user;
+
 	/* we don't need to handle ourselves joining the chat -> ignore signal */
 	/**TODO: check if we can improve key exchange if the joining user also
 	 * starts sending messages instead of waiting for other users. Use the
@@ -291,6 +294,22 @@ chat_user_joined(PurpleConversation *conv,
 
 	purple_debug_info(PLUGIN_ID, "chat_user_joined: %s->%s\n",
 	                  conv->title, name);
+
+	if (!(pr = g_hash_table_lookup(gotrp_rooms, conv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return;
+	}
+
+	if (!(user = gotr_user_joined(pr->room, name))) {
+		purple_debug_error(PLUGIN_ID, "libgotr could not let user join\n");
+		return;
+	}
+
+	if (!g_hash_table_replace(pr->users, g_strdup(name), user)) {
+		/* unreachable */
+		purple_debug_warning(PLUGIN_ID, "unreachable: user replaced\n");
+		return;
+	}
 }
 
 static void
@@ -298,7 +317,22 @@ chat_user_left(PurpleConversation *conv,
                const char *name,
                const char *reason)
 {
+	struct gotrp_room *pr;
+	struct gotr_user *user;
+
 	purple_debug_info(PLUGIN_ID, "chat_user_left: %s->%s\n", conv->title, name);
+
+	if (!(pr = g_hash_table_lookup(gotrp_rooms, conv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return;
+	}
+
+	if (!(user = g_hash_table_lookup(pr->users, name))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled for leaving user\n");
+		return;
+	}
+
+	gotr_user_left(pr->room, user);
 }
 
 static void
