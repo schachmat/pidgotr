@@ -94,6 +94,8 @@ gotrp_send_user_cb(void *room_closure,
 		return 0;
 	}
 
+	/* BEWARE: we rely on pidgin to use "chatroom/nickname" to refer to private
+	 * conversations with users in a chat room */
 	if (blen <= snprintf(buf,
 	                     blen,
 	                     "%s/%s",
@@ -119,7 +121,7 @@ gotrp_send_user_cb(void *room_closure,
 		                   "received-im-msg",
 		                   conv->account,
 		                   buf,
-		                   "lol ignore me",
+		                   "lol ignore me", /* unused setup message needed */
 		                   NULL,
 		                   PURPLE_MESSAGE_INVISIBLE);
 		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
