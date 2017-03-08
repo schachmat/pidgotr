@@ -45,6 +45,12 @@ static PidginPluginUiInfo ui_config = { gotrg_ui_create_conf_widget };
 /** GOTR plugin handle */
 static PurplePlugin *gotrph = NULL;
 
+struct gotrp_room {
+	struct gotr_chatroom *room;
+	GHashTable *users;
+};
+
+/** internal room mapping from (PurpleConversation*) to (struct gotrp_room*) */
 static GHashTable *gotrp_rooms = NULL;
 
 static void
@@ -205,7 +211,7 @@ sending_chat(PurpleAccount *account,
              char **message,
              int id)
 {
-	struct gotr_chatroom *room;
+	struct gotrp_room *pr;
 	PurpleConversation *conv;
 	PurpleConnection *gc;
 
@@ -221,12 +227,12 @@ sending_chat(PurpleAccount *account,
 		return;
 	}
 
-	if (!(room = g_hash_table_lookup(gotrp_rooms, conv))) {
+	if (!(pr = g_hash_table_lookup(gotrp_rooms, conv))) {
 		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
 		return;
 	}
 
-	if (gotr_send(room, *message)) {
+	if (gotr_send(pr->room, *message)) {
 		free(*message);
 		*message = NULL;
 	}
@@ -239,7 +245,7 @@ receiving_chat(PurpleAccount *account,
                PurpleConversation *conv,
                int *flags)
 {
-	struct gotr_chatroom *room;
+	struct gotrp_room *pr;
 
 	if (*flags & PURPLE_MESSAGE_DELAYED) {
 		purple_debug_misc(PLUGIN_ID,
@@ -258,12 +264,12 @@ receiving_chat(PurpleAccount *account,
 	purple_debug_info(PLUGIN_ID, "receiving_chat: (flags %d) %s->%s: %s\n",
 	                  *flags, conv->title, *sender, *message);
 
-	if (!(room = g_hash_table_lookup(gotrp_rooms, conv))) {
+	if (!(pr = g_hash_table_lookup(gotrp_rooms, conv))) {
 		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
 		return FALSE;
 	}
 
-	return gotr_receive(room, *message);
+	return gotr_receive(pr->room, *message);
 }
 
 static void
@@ -296,24 +302,39 @@ chat_user_left(PurpleConversation *conv,
 static void
 chat_joined(PurpleConversation *conv)
 {
-	struct gotr_chatroom *room;
+	struct gotrp_room *pr;
 
 	purple_debug_info(PLUGIN_ID, "chat_joined: %s\n", conv->title);
 
-	room = gotr_join(&gotrp_send_all_cb,
-	                 &gotrp_send_user_cb,
-	                 &gotrp_receive_user_cb,
-	                 conv,
-	                 NULL); /* autogen privkey for now */
-
-	if (!room) {
-		purple_debug_error(PLUGIN_ID, "got NULL room when joining");
+	if (!(pr = calloc(1, sizeof(struct gotrp_room)))) {
+		purple_debug_error(PLUGIN_ID, "failed to alloc memory for room\n");
 		return;
 	}
 
-	if (!g_hash_table_insert(gotrp_rooms, conv, room)) {
-		/* should not happen */
-		purple_debug_warning(PLUGIN_ID, "chat conversation replaced");
+	if (!(pr->users = g_hash_table_new_full(&g_str_hash,
+	                                        &g_str_equal,
+	                                        &g_free,
+	                                        NULL))) {
+		purple_debug_error(PLUGIN_ID, "unable to create users hash table\n");
+		free(pr);
+		return;
+	}
+
+	pr->room = gotr_join(&gotrp_send_all_cb,
+	                     &gotrp_send_user_cb,
+	                     &gotrp_receive_user_cb,
+	                     conv,
+	                     NULL); /* autogen privkey for now */
+	if (!pr->room) {
+		purple_debug_error(PLUGIN_ID, "got NULL room when joining");
+		g_hash_table_destroy(pr->users);
+		free(pr);
+		return;
+	}
+
+	if (!g_hash_table_insert(gotrp_rooms, conv, pr)) {
+		/* unreachable */
+		purple_debug_warning(PLUGIN_ID, "unreachable: chat replaced");
 	}
 }
 
@@ -345,9 +366,12 @@ conv_deleting(PurpleConversation *conv)
 }
 
 static void
-destroy_room(gpointer room)
+destroy_room(gpointer data)
 {
-	gotr_leave((struct gotr_chatroom *)room);
+	struct gotrp_room *pr = data;
+
+	g_hash_table_destroy(pr->users);
+	gotr_leave(pr->room);
 }
 
 static gboolean
