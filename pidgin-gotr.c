@@ -126,8 +126,9 @@ gotrp_send_user_cb(void *room_closure,
 		 * shown to the user. Thus we hide the conversation by temporarily
 		 * changing the hide_new setting and emitting the received-im-msg which
 		 * will create the conversation for us inside the hidden window. */
-		const char *old = purple_prefs_get_string(PIDGIN_PREFS_ROOT
-		                                          "/conversations/im/hide_new");
+		char *old;
+		old = g_strdup(purple_prefs_get_string(PIDGIN_PREFS_ROOT
+		                                       "/conversations/im/hide_new"));
 		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
 		                        "always");
 		purple_signal_emit(purple_conversations_get_handle(),
@@ -139,6 +140,7 @@ gotrp_send_user_cb(void *room_closure,
 		                   PURPLE_MESSAGE_INVISIBLE);
 		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
 		                        old);
+		g_free(old);
 //		im_conv = purple_conversation_new(PURPLE_CONV_TYPE_IM,
 //		                                  conv->account,
 //		                                  buf);
