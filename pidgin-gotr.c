@@ -289,8 +289,10 @@ plugin_load(PurplePlugin *plugin)
 	void *conv = purple_conversations_get_handle();
 
 	gotr_set_log_fn(&gotrp_log_cb);
-	if (!gotr_init())
+	if (!gotr_init()) {
+		purple_debug_error(PLUGIN_ID, "failed to initialize libgotr\n");
 		return FALSE;
+	}
 
 	purple_signal_connect(conv, "sending-im-msg", plugin,
 	                      PURPLE_CALLBACK(sending_im), NULL);
