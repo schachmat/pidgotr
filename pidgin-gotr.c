@@ -328,7 +328,7 @@ chat_joined(PurpleConversation *conv)
 	                     conv,
 	                     NULL); /* autogen privkey for now */
 	if (!pr->room) {
-		purple_debug_error(PLUGIN_ID, "got NULL room when joining");
+		purple_debug_error(PLUGIN_ID, "got NULL room when joining\n");
 		g_hash_table_destroy(pr->users);
 		free(pr);
 		return;
@@ -336,7 +336,7 @@ chat_joined(PurpleConversation *conv)
 
 	if (!g_hash_table_insert(gotrp_rooms, conv, pr)) {
 		/* unreachable */
-		purple_debug_warning(PLUGIN_ID, "unreachable: chat replaced");
+		purple_debug_warning(PLUGIN_ID, "unreachable: chat replaced\n");
 	}
 }
 
@@ -346,7 +346,7 @@ chat_left(PurpleConversation *conv)
 	purple_debug_info(PLUGIN_ID, "chat_left: %s\n", conv->title);
 
 	if (!g_hash_table_remove(gotrp_rooms, conv)) {
-		purple_debug_error(PLUGIN_ID, "could not find room to leave");
+		purple_debug_error(PLUGIN_ID, "could not find room to leave\n");
 		return;
 	}
 }
