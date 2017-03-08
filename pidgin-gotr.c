@@ -49,10 +49,15 @@ static void
 gotrp_log_cb(const char *format, ...)
 {
 	va_list ap;
+	const size_t mlen = 2048;
+	char msg[mlen];
 
 	va_start(ap, format);
-	purple_debug_warning(PLUGIN_ID, format, ap);
+	vsnprintf(msg, mlen, format, ap);
 	va_end(ap);
+	msg[mlen-1] = '\0';
+
+	purple_debug_warning(PLUGIN_ID, "%s", msg);
 }
 
 static int
