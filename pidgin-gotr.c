@@ -48,6 +48,7 @@ static PurplePlugin *gotrph = NULL;
 struct gotrp_room {
 	struct gotr_chatroom *room;
 	GHashTable *users;
+	GHashTable *userstrs;
 };
 
 /** internal room mapping from (PurpleConversation*) to (struct gotrp_room*) */
@@ -191,7 +192,7 @@ sending_im(PurpleAccount *account,
            const char *receiver,
            char **message)
 {
-	purple_debug_info(PLUGIN_ID, "sending_im\n");
+	purple_debug_info(PLUGIN_ID, "sending_im -> %s: %s\n", receiver, *message);
 }
 
 static gboolean
@@ -201,10 +202,83 @@ receiving_im(PurpleAccount *account,
              PurpleConversation *conv,
              int *flags)
 {
+	struct gotrp_room *pr;
+	struct gotr_user *user;
+	char *src = g_strdup(*sender);
+	char *usr, *div;
+	PurpleConversation *cconv;
+
 	purple_debug_info(PLUGIN_ID, "receiving_im: (flags %d) %s->%s: %s\n",
 	                  *flags, conv ? conv->title : "(NULL)", *sender, *message);
-	/**TODO: decrypt if possible */
 
+	/* BEWARE: we rely on pidgin to use "chatroom/nickname" to refer to private
+	 * conversations with users in a chat room */
+	if (!(div = strchr(src, '/'))) {
+		purple_debug_misc(PLUGIN_ID, "im not from a chat\n");
+		g_free(src);
+		return FALSE;
+	}
+
+	purple_debug_misc(PLUGIN_ID, "%s     %s\n", src, div);
+	*div = '\0';
+
+	if (!(cconv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_CHAT,
+	                                                    src,
+	                                                    account))) {
+		purple_debug_misc(PLUGIN_ID, "could not find matching chat conv\n");
+		g_free(src);
+		return FALSE;
+	}
+
+	if (!(pr = g_hash_table_lookup(gotrp_rooms, cconv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		/**TODO: automatically enable gotr if wanted by settings */
+		g_free(src);
+		return FALSE;
+	}
+
+	usr = g_strdup(++div);
+	if (!purple_conv_chat_find_user(PURPLE_CONV_CHAT(cconv), usr)) {
+		purple_debug_warning(PLUGIN_ID, "user not in chat: %s\n", usr);
+		g_free(src);
+		g_free(usr);
+		return FALSE;
+	}
+
+	/* check if we already know the user */
+	if ((user = g_hash_table_lookup(pr->users, usr))) {
+		if (!gotr_receive_user(pr->room, user, usr, *message)) {
+			purple_debug_misc(PLUGIN_ID, "got malformed gotr message\n");
+			g_free(src);
+			g_free(usr);
+			return FALSE;
+		}
+		if (!g_hash_table_add(pr->userstrs, usr))
+			/* unreachable */
+			purple_debug_warning(PLUGIN_ID, "unreachable: userstr replaced\n");
+		g_free(src);
+		return TRUE;
+	}
+
+	/* we don't know the user yet, activate! */
+	purple_debug_misc(PLUGIN_ID, "enabling gotr for user %s\n", usr);
+	if (!(user = gotr_receive_user(pr->room, NULL, usr, *message))) {
+		purple_debug_misc(PLUGIN_ID, "no valid gotr message\n");
+		g_free(src);
+		g_free(usr);
+		return FALSE;
+	}
+
+	if (!g_hash_table_replace(pr->users, g_strdup(usr), user))
+		/* unreachable */
+		purple_debug_warning(PLUGIN_ID, "unreachable: user replaced\n");
+	if (!g_hash_table_add(pr->userstrs, usr))
+		/* unreachable */
+		purple_debug_warning(PLUGIN_ID, "unreachable: userstr replaced\n");
+	g_free(src);
+	return TRUE;
+
+	/* unreachable, just in case… */
 	return FALSE;
 }
 
@@ -216,6 +290,10 @@ sending_chat(PurpleAccount *account,
 	struct gotrp_room *pr;
 	PurpleConversation *conv;
 	PurpleConnection *gc;
+
+	/* ignore gotr messages to prevent loop */
+	if (!strncmp("?GOTR?", *message, strlen("?GOTR?")))
+		return;
 
 	purple_debug_info(PLUGIN_ID, "sending_chat: %s\n", *message);
 
@@ -282,6 +360,7 @@ chat_user_joined(PurpleConversation *conv,
 {
 	struct gotrp_room *pr;
 	struct gotr_user *user;
+	char *usr;
 
 	/* we don't need to handle ourselves joining the chat -> ignore signal */
 	/**TODO: check if we can improve key exchange if the joining user also
@@ -300,8 +379,20 @@ chat_user_joined(PurpleConversation *conv,
 		return;
 	}
 
-	if (!(user = gotr_user_joined(pr->room, name))) {
+	if (!(usr = g_strdup(name))) {
+		purple_debug_error(PLUGIN_ID, "unable to malloc username\n");
+		return;
+	}
+
+	if (!(user = gotr_user_joined(pr->room, usr))) {
 		purple_debug_error(PLUGIN_ID, "libgotr could not let user join\n");
+		g_free(usr);
+		return;
+	}
+
+	if (!g_hash_table_add(pr->userstrs, usr)) {
+		/* unreachable */
+		purple_debug_warning(PLUGIN_ID, "unreachable: userstr replaced\n");
 		return;
 	}
 
@@ -356,6 +447,16 @@ chat_joined(PurpleConversation *conv)
 		return;
 	}
 
+	if (!(pr->userstrs = g_hash_table_new_full(&g_direct_hash,
+	                                           &g_direct_equal,
+	                                           &g_free,
+	                                           NULL))) {
+		purple_debug_error(PLUGIN_ID, "unable to create userstrs hash table\n");
+		g_hash_table_destroy(pr->users);
+		free(pr);
+		return;
+	}
+
 	pr->room = gotr_join(&gotrp_send_all_cb,
 	                     &gotrp_send_user_cb,
 	                     &gotrp_receive_user_cb,
@@ -364,6 +465,7 @@ chat_joined(PurpleConversation *conv)
 	if (!pr->room) {
 		purple_debug_error(PLUGIN_ID, "got NULL room when joining\n");
 		g_hash_table_destroy(pr->users);
+		g_hash_table_destroy(pr->userstrs);
 		free(pr);
 		return;
 	}
@@ -407,6 +509,7 @@ destroy_room(gpointer data)
 	struct gotrp_room *pr = data;
 
 	g_hash_table_destroy(pr->users);
+	g_hash_table_destroy(pr->userstrs);
 	gotr_leave(pr->room);
 }
 
