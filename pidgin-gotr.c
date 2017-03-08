@@ -24,6 +24,7 @@
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
 
 #include <glib.h>
 #include <gtk/gtk.h>
@@ -58,6 +59,21 @@ static int
 gotrp_send_all_cb(void *room_closure,
                   const char *b64_msg)
 {
+	gboolean logging;
+	PurpleConvChat *chat_conv;
+
+	if (!(chat_conv = PURPLE_CONV_CHAT(room_closure))) {
+		purple_debug_error(PLUGIN_ID, "send_all_cb: broken room_closure\n");
+		return 0;
+	}
+
+	/* temporarily disable logging for hidden messages */
+	logging = purple_conversation_is_logging(room_closure);
+	purple_conversation_set_logging(room_closure, FALSE);
+	purple_conv_chat_send_with_flags(chat_conv,
+	                                 b64_msg,
+	                                 PURPLE_MESSAGE_INVISIBLE);
+	purple_conversation_set_logging(room_closure, logging);
 	return 1;
 }
 
@@ -139,6 +155,18 @@ gotrp_receive_user_cb(void *room_closure,
                       void *user_closure,
                       const char *plain_msg)
 {
+	PurpleConvChat *chat_conv;
+
+	if (!(chat_conv = PURPLE_CONV_CHAT(room_closure))) {
+		purple_debug_error(PLUGIN_ID, "recv_user_cb: broken room_closure\n");
+		return;
+	}
+
+	purple_conv_chat_write(chat_conv,
+	                       (const char *)user_closure,
+	                       plain_msg,
+	                       PURPLE_MESSAGE_RECV,
+	                       time(NULL));
 }
 
 static void
