@@ -219,7 +219,6 @@ receiving_im(PurpleAccount *account,
 		return FALSE;
 	}
 
-	purple_debug_misc(PLUGIN_ID, "%s     %s\n", src, div);
 	*div = '\0';
 
 	if (!(cconv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_CHAT,
