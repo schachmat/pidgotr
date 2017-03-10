@@ -57,6 +57,8 @@ static gboolean gotrp_originated_msg = FALSE;
 /** internal room mapping from (PurpleConversation*) to (struct gotrp_room*) */
 static GHashTable *gotrp_rooms = NULL;
 
+/** cache libgotr-generated group chat messages to prevent displaying them */
+static GHashTable *gotrp_msgcache = NULL;
 
 static void
 gotrp_log_cb(const char *format, ...)
@@ -83,6 +85,8 @@ gotrp_send_all_cb(void *room_closure,
 		purple_debug_error(PLUGIN_ID, "send_all_cb: broken room_closure\n");
 		return 0;
 	}
+
+	g_hash_table_add(gotrp_msgcache, g_strdup(b64_msg));
 
 	purple_conv_chat_send_with_flags(chat_conv,
 	                                 b64_msg,
@@ -297,10 +301,29 @@ sending_chat(PurpleAccount *account,
 
 	gotrp_originated_msg = TRUE;
 	if (gotr_send(pr->room, *message)) {
+		purple_conv_chat_write(PURPLE_CONV_CHAT(conv),
+		                       PURPLE_CONV_CHAT(conv)->nick,
+		                       *message,
+		                       PURPLE_MESSAGE_SEND,
+		                       time(NULL));
 		free(*message);
 		*message = NULL;
 	}
 	gotrp_originated_msg = FALSE;
+}
+
+static gboolean
+writing_chat(PurpleAccount *account,
+             const char *who,
+             char **message,
+             PurpleConversation *conv,
+             PurpleMessageFlags flags)
+{
+	if (g_hash_table_remove(gotrp_msgcache, *message))
+		return TRUE;
+
+	purple_debug_misc(PLUGIN_ID, "writing to %s: %s\n", conv->title, *message);
+	return FALSE;
 }
 
 static gboolean
@@ -505,6 +528,16 @@ plugin_load(PurplePlugin *plugin)
 		return FALSE;
 	}
 
+	if (!(gotrp_msgcache = g_hash_table_new_full(&g_str_hash,
+	                                             &g_str_equal,
+	                                             &g_free,
+	                                             NULL))) {
+		purple_debug_error(PLUGIN_ID, "failed to create msg cache\n");
+		return FALSE;
+	}
+
+	purple_signal_connect(conv, "writing-chat-msg", plugin,
+	                      PURPLE_CALLBACK(writing_chat), NULL);
 	purple_signal_connect(conv, "receiving-im-msg", plugin,
 	                      PURPLE_CALLBACK(receiving_im), NULL);
 	purple_signal_connect(conv, "sending-chat-msg", plugin,
@@ -535,7 +568,10 @@ plugin_unload(PurplePlugin *plugin)
 	void *conv = purple_conversations_get_handle();
 
 	g_hash_table_destroy(gotrp_rooms);
+	g_hash_table_destroy(gotrp_msgcache);
 
+	purple_signal_disconnect(conv, "writing-chat-msg", gotrph,
+	                         PURPLE_CALLBACK(writing_chat));
 	purple_signal_disconnect(conv, "receiving-im-msg", gotrph,
 	                         PURPLE_CALLBACK(receiving_im));
 	purple_signal_disconnect(conv, "sending-chat-msg", gotrph,
