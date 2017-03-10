@@ -145,9 +145,6 @@ gotrp_send_user_cb(void *room_closure,
 		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
 		                        old);
 		g_free(old);
-//		im_conv = purple_conversation_new(PURPLE_CONV_TYPE_IM,
-//		                                  conv->account,
-//		                                  buf);
 
 		im_conv = purple_find_conversation_with_account(PURPLE_CONV_TYPE_IM,
 		                                                buf,
@@ -377,7 +374,7 @@ chat_user_joined(PurpleConversation *conv,
 	 * starts sending messages instead of waiting for other users. Use the
 	 * strcmp version of the line to accept this signal for already existing
 	 * other users in a chat we just joined ourselves. */
-//	if (0 == strcmp(PURPLE_CONV_CHAT(conv)->nick, name))
+/*	if (0 == strcmp(PURPLE_CONV_CHAT(conv)->nick, name)) */
 	if (!new_arrival)
 		return;
 
