@@ -328,13 +328,13 @@ receiving_chat(PurpleAccount *account,
 		return FALSE;
 	}
 
-	purple_debug_info(PLUGIN_ID, "receiving_chat: (flags %d) %s->%s: %s\n",
-	                  *flags, conv->title, *sender, *message);
-
 	if (!(pr = g_hash_table_lookup(gotrp_rooms, conv))) {
 		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
 		return FALSE;
 	}
+
+	purple_debug_info(PLUGIN_ID, "receiving_chat: (flags %d) %s->%s: %s\n",
+	                  *flags, conv->title, *sender, *message);
 
 	return gotr_receive(pr->room, *message);
 }
