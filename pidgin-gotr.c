@@ -187,14 +187,6 @@ gotrp_receive_user_cb(void *room_closure,
 	                       time(NULL));
 }
 
-static void
-sending_im(PurpleAccount *account,
-           const char *receiver,
-           char **message)
-{
-	purple_debug_info(PLUGIN_ID, "sending_im -> %s: %s\n", receiver, *message);
-}
-
 static gboolean
 receiving_im(PurpleAccount *account,
              char **sender,
@@ -531,8 +523,6 @@ plugin_load(PurplePlugin *plugin)
 		return FALSE;
 	}
 
-	purple_signal_connect(conv, "sending-im-msg", plugin,
-	                      PURPLE_CALLBACK(sending_im), NULL);
 	purple_signal_connect(conv, "receiving-im-msg", plugin,
 	                      PURPLE_CALLBACK(receiving_im), NULL);
 	purple_signal_connect(conv, "sending-chat-msg", plugin,
@@ -564,8 +554,6 @@ plugin_unload(PurplePlugin *plugin)
 
 	g_hash_table_destroy(gotrp_rooms);
 
-	purple_signal_disconnect(conv, "sending-im-msg", gotrph,
-	                         PURPLE_CALLBACK(sending_im));
 	purple_signal_disconnect(conv, "receiving-im-msg", gotrph,
 	                         PURPLE_CALLBACK(receiving_im));
 	purple_signal_disconnect(conv, "sending-chat-msg", gotrph,
