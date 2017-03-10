@@ -43,7 +43,6 @@
 struct gotrp_room {
 	struct gotr_chatroom *room;
 	GHashTable *users;
-	GHashTable *userstrs;
 };
 
 
@@ -225,13 +224,15 @@ receiving_im(PurpleAccount *account,
 		return FALSE;
 	}
 
-	usr = g_strdup(++div);
+	usr = ++div;
 	if (!purple_conv_chat_find_user(PURPLE_CONV_CHAT(cconv), usr)) {
 		purple_debug_warning(PLUGIN_ID, "user not in chat: %s\n", usr);
 		g_free(src);
-		g_free(usr);
 		return FALSE;
 	}
+
+	/* make copy which can be safely passed to gotr_receive_user */
+	usr = g_strdup(usr);
 
 	/* check if we already know the user */
 	if ((user = g_hash_table_lookup(pr->users, usr))) {
@@ -241,9 +242,6 @@ receiving_im(PurpleAccount *account,
 			g_free(usr);
 			return FALSE;
 		}
-		if (!g_hash_table_add(pr->userstrs, usr))
-			/* unreachable */
-			purple_debug_warning(PLUGIN_ID, "unreachable: userstr replaced\n");
 		g_free(src);
 		return TRUE;
 	}
@@ -260,9 +258,6 @@ receiving_im(PurpleAccount *account,
 	if (!g_hash_table_replace(pr->users, g_strdup(usr), user))
 		/* unreachable */
 		purple_debug_warning(PLUGIN_ID, "unreachable: user replaced\n");
-	if (!g_hash_table_add(pr->userstrs, usr))
-		/* unreachable */
-		purple_debug_warning(PLUGIN_ID, "unreachable: userstr replaced\n");
 	g_free(src);
 	return TRUE;
 
@@ -382,12 +377,6 @@ chat_user_joined(PurpleConversation *conv,
 		return;
 	}
 
-	if (!g_hash_table_add(pr->userstrs, usr)) {
-		/* unreachable */
-		purple_debug_warning(PLUGIN_ID, "unreachable: userstr replaced\n");
-		return;
-	}
-
 	if (!g_hash_table_replace(pr->users, g_strdup(name), user)) {
 		/* unreachable */
 		purple_debug_warning(PLUGIN_ID, "unreachable: user replaced\n");
@@ -439,16 +428,6 @@ chat_joined(PurpleConversation *conv)
 		return;
 	}
 
-	if (!(pr->userstrs = g_hash_table_new_full(&g_direct_hash,
-	                                           &g_direct_equal,
-	                                           &g_free,
-	                                           NULL))) {
-		purple_debug_error(PLUGIN_ID, "unable to create userstrs hash table\n");
-		g_hash_table_destroy(pr->users);
-		free(pr);
-		return;
-	}
-
 	pr->room = gotr_join(&gotrp_send_all_cb,
 	                     &gotrp_send_user_cb,
 	                     &gotrp_receive_user_cb,
@@ -457,7 +436,6 @@ chat_joined(PurpleConversation *conv)
 	if (!pr->room) {
 		purple_debug_error(PLUGIN_ID, "got NULL room when joining\n");
 		g_hash_table_destroy(pr->users);
-		g_hash_table_destroy(pr->userstrs);
 		free(pr);
 		return;
 	}
@@ -501,7 +479,6 @@ destroy_room(gpointer data)
 	struct gotrp_room *pr = data;
 
 	g_hash_table_destroy(pr->users);
-	g_hash_table_destroy(pr->userstrs);
 	gotr_leave(pr->room);
 }
 
