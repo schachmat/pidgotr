@@ -73,7 +73,6 @@ static int
 gotrp_send_all_cb(void *room_closure,
                   const char *b64_msg)
 {
-	gboolean logging;
 	PurpleConvChat *chat_conv;
 
 	if (!(chat_conv = PURPLE_CONV_CHAT(room_closure))) {
@@ -81,13 +80,10 @@ gotrp_send_all_cb(void *room_closure,
 		return 0;
 	}
 
-	/* temporarily disable logging for hidden messages */
-	logging = purple_conversation_is_logging(room_closure);
-	purple_conversation_set_logging(room_closure, FALSE);
 	purple_conv_chat_send_with_flags(chat_conv,
 	                                 b64_msg,
-	                                 PURPLE_MESSAGE_INVISIBLE);
-	purple_conversation_set_logging(room_closure, logging);
+	                                 PURPLE_MESSAGE_INVISIBLE |
+	                                 PURPLE_MESSAGE_NO_LOG);
 	return 1;
 }
 
@@ -98,7 +94,6 @@ gotrp_send_user_cb(void *room_closure,
 {
 	const size_t blen = 2048;
 	char buf[blen];
-	gboolean logging;
 	PurpleConversation *conv = room_closure;
 	PurpleConvChat *chat_conv;
 	PurpleConversation *im_conv;
@@ -138,7 +133,7 @@ gotrp_send_user_cb(void *room_closure,
 		                   buf,
 		                   "lol ignore me", /* unused setup message needed */
 		                   NULL,
-		                   PURPLE_MESSAGE_INVISIBLE);
+		                   PURPLE_MESSAGE_INVISIBLE | PURPLE_MESSAGE_NO_LOG);
 		purple_prefs_set_string(PIDGIN_PREFS_ROOT "/conversations/im/hide_new",
 		                        old);
 		g_free(old);
@@ -157,13 +152,10 @@ gotrp_send_user_cb(void *room_closure,
 		}
 	}
 
-	/* temporarily disable logging for hidden messages */
-	logging = purple_conversation_is_logging(im_conv);
-	purple_conversation_set_logging(im_conv, FALSE);
 	purple_conv_im_send_with_flags(PURPLE_CONV_IM(im_conv),
 	                               b64_msg,
-	                               PURPLE_MESSAGE_INVISIBLE);
-	purple_conversation_set_logging(im_conv, logging);
+	                               PURPLE_MESSAGE_INVISIBLE |
+	                               PURPLE_MESSAGE_NO_LOG);
 
 	return 1;
 }
