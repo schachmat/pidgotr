@@ -328,8 +328,10 @@ receiving_chat(PurpleAccount *account,
 	}
 
 	/* ignore own messages */
-	if (*flags & PURPLE_MESSAGE_SEND)
+	if (*flags & PURPLE_MESSAGE_SEND) {
+		purple_debug_misc(PLUGIN_ID, "ignoring own msg: %s\n", *message);
 		return FALSE;
+	}
 
 	purple_debug_info(PLUGIN_ID, "receiving_chat: (flags %d) %s->%s: %s\n",
 	                  *flags, conv->title, *sender, *message);
