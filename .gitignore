@@ -4,3 +4,4 @@
 *.so
 *.so.*
 *cscope.out
+/icons/
