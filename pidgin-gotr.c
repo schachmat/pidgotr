@@ -31,14 +31,18 @@
 
 #include <pidgin/gtkconv.h>
 #include <pidgin/gtkconvwin.h>
+#include <pidgin/gtkimhtml.h>
 #include <pidgin/gtkplugin.h>
 #include <libpurple/account.h>
+#include <libpurple/core.h>
 #include <libpurple/conversation.h>
 #include <libpurple/debug.h>
 #include <libpurple/version.h>
 
 #include <gotr.h>
+
 #include "gtk-ui.h"
+#include "icons.h"
 
 struct gotrp_room {
 	struct gotr_chatroom *room;
@@ -56,6 +60,8 @@ static GHashTable *gotrp_rooms = NULL;
 
 /** cache libgotr-generated group chat messages to prevent displaying them */
 static GHashTable *gotrp_msgcache = NULL;
+
+static int img_id_green = 0;
 
 static void
 gotrp_log_cb(const char *format, ...)
@@ -494,6 +500,36 @@ conv_deleting(PurpleConversation *conv)
 	purple_debug_warning(PLUGIN_ID, "conv_deleting: type: %d\n", conv->type);
 }
 
+static char *
+timestamp(PurpleConversation *conv, time_t mtime, gboolean show_date)
+{
+	PidginConversation *gtkconv;
+	char *markup;
+
+	if (!(gtkconv = PIDGIN_CONVERSATION(conv))) {
+		purple_debug_warning(PLUGIN_ID, "unable to get gtk conv handle\n");
+		return NULL;
+	}
+
+	if (!(markup = g_strdup_printf("<img id=\"%d\"> ", img_id_green))) {
+		purple_debug_warning(PLUGIN_ID, "unable to format markup\n");
+		return NULL;
+	}
+
+	gtk_imhtml_append_text_with_images((GtkIMHtml *)gtkconv->imhtml,
+	                                   markup, 0, NULL);
+	g_free(markup);
+
+	return NULL;
+}
+
+static void
+quitting()
+{
+	purple_imgstore_unref_by_id(img_id_green);
+	img_id_green = 0;
+}
+
 static void
 destroy_room(gpointer data)
 {
@@ -550,6 +586,18 @@ plugin_load(PurplePlugin *plugin)
 	                      PURPLE_CALLBACK(conv_created), NULL);
 	purple_signal_connect(conv, "deleting-conversation", plugin,
 	                      PURPLE_CALLBACK(conv_deleting), NULL);
+	purple_signal_connect(pidgin_conversations_get_handle(),
+	                      "conversation-timestamp", plugin,
+	                      PURPLE_CALLBACK(timestamp), NULL);
+	purple_signal_connect(purple_get_core(),
+	                      "quitting", plugin,
+	                      PURPLE_CALLBACK(quitting), NULL);
+
+	/* load icons to purple imgstore */
+	img_id_green = purple_imgstore_add_with_id(g_memdup(green_png,
+	                                                    sizeof(green_png)),
+	                                           sizeof(green_png),
+	                                           NULL);
 
 	purple_debug_info(PLUGIN_ID, "plugin loaded\n");
 	return TRUE;
@@ -583,6 +631,14 @@ plugin_unload(PurplePlugin *plugin)
 	                         PURPLE_CALLBACK(conv_created));
 	purple_signal_disconnect(conv, "deleting-conversation", plugin,
 	                         PURPLE_CALLBACK(conv_deleting));
+	purple_signal_disconnect(pidgin_conversations_get_handle(),
+	                         "conversation-timestamp", plugin,
+	                         PURPLE_CALLBACK(timestamp));
+	purple_signal_disconnect(purple_get_core(),
+	                         "quitting", plugin,
+	                         PURPLE_CALLBACK(quitting));
+
+	quitting();
 
 	purple_debug_info(PLUGIN_ID, "plugin unloaded\n");
 	return TRUE;
