@@ -342,7 +342,12 @@ receiving_chat(PurpleAccount *account,
 		                  *sender,
 		                  conv->title,
 		                  *message);
-		return FALSE;
+		/* ignore messages starting with "?GOTR?". We can't say for sure if they
+		 * are actual GOTR messages, but taking the chance of some
+		 * false-positive matches hidden from the user is better than confusing
+		 * them with the ?GOTR? messages each time they join a chat where the
+		 * past messages are resent. */
+		return 0 == strncmp("?GOTR?", *message, strlen("?GOTR?"));
 	}
 
 	/* ignore own messages */
