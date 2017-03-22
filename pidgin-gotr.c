@@ -58,7 +58,8 @@ static gboolean gotrp_originated_msg = FALSE;
 /** internal room mapping from (PurpleConversation*) to (struct gotrp_room*) */
 static GHashTable *gotrp_rooms = NULL;
 
-/** cache libgotr-generated group chat messages to prevent displaying them */
+/** cache for libgotr-generated group chat messages to prevent displaying them
+ * in the senders chat window. */
 static GList *gotrp_msgcache = NULL;
 
 static int img_id_green = 0;
