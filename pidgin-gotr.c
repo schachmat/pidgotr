@@ -1,5 +1,5 @@
 /* The GOTR pidgin plugin
- * Copyright (C) 2015 Markus Teich
+ * Copyright (C) 2017 Markus Teich
  *
  * This file is part of the GOTR pidgin plugin.
  *
