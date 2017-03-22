@@ -47,6 +47,12 @@
 struct gotrp_room {
 	struct gotr_chatroom *room;
 	GHashTable *users;
+
+	/** caches messages encrypted with GOTR */
+	GList *msgs_green;
+
+	/** caches messages not encrypted with GOTR */
+	GList *msgs_red;
 };
 
 
@@ -62,7 +68,17 @@ static GHashTable *gotrp_rooms = NULL;
  * in the senders chat window. */
 static GList *gotrp_msgcache = NULL;
 
+/** id of the image to display with the next message */
+static int next_img_id = 0;
+
+/** id of the green lock icon image id */
 static int img_id_green = 0;
+
+/** id of the yellow lock icon image id */
+static int img_id_yellow = 0;
+
+/** id of the red lock icon image id */
+static int img_id_red = 0;
 
 static void
 gotrp_log_cb(const char *format, ...)
@@ -175,12 +191,19 @@ gotrp_receive_user_cb(void *room_closure,
                       const char *plain_msg)
 {
 	PurpleConvChat *chat_conv;
+	struct gotrp_room *pr;
 
 	if (!(chat_conv = PURPLE_CONV_CHAT(room_closure))) {
 		purple_debug_error(PLUGIN_ID, "recv_user_cb: broken room_closure\n");
 		return;
 	}
 
+	if (!(pr = g_hash_table_lookup(gotrp_rooms, room_closure))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return;
+	}
+
+	pr->msgs_green = g_list_prepend(pr->msgs_green, g_strdup(plain_msg));
 	purple_conv_chat_write(chat_conv,
 	                       (const char *)user_closure,
 	                       plain_msg,
@@ -302,6 +325,7 @@ sending_chat(PurpleAccount *account,
 
 	gotrp_originated_msg = TRUE;
 	if (gotr_send(pr->room, *message)) {
+		pr->msgs_green = g_list_prepend(pr->msgs_green, g_strdup(*message));
 		purple_conv_chat_write(PURPLE_CONV_CHAT(conv),
 		                       PURPLE_CONV_CHAT(conv)->nick,
 		                       *message,
@@ -309,6 +333,8 @@ sending_chat(PurpleAccount *account,
 		                       time(NULL));
 		free(*message);
 		*message = NULL;
+	} else {
+		pr->msgs_red = g_list_prepend(pr->msgs_red, g_strdup(*message));
 	}
 	gotrp_originated_msg = FALSE;
 }
@@ -374,7 +400,12 @@ receiving_chat(PurpleAccount *account,
 	purple_debug_info(PLUGIN_ID, "receiving_chat: (flags %d) %s->%s: %s\n",
 	                  *flags, conv->title, *sender, *message);
 
-	return gotr_receive(pr->room, *message);
+	if (gotr_receive(pr->room, *message)) {
+		return TRUE;
+	} else {
+		pr->msgs_red = g_list_prepend(pr->msgs_red, g_strdup(*message));
+		return FALSE;
+	}
 }
 
 static void
@@ -515,18 +546,79 @@ conv_deleting(PurpleConversation *conv)
 	purple_debug_warning(PLUGIN_ID, "conv_deleting: type: %d\n", conv->type);
 }
 
+
+static gboolean
+onDisplayingChat(PurpleAccount *account,
+                 const char *who,
+                 char **message,
+                 PurpleConversation *conv,
+                 PurpleMessageFlags flags)
+{
+	struct gotrp_room *pr;
+	GList *elemGreen;
+	GList *elemRed;
+
+	if (!(pr = g_hash_table_lookup(gotrp_rooms, conv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return FALSE;
+	}
+
+	if (!(elemGreen = g_list_find_custom(pr->msgs_green,
+	                                     *message,
+	                                     (GCompareFunc)&strcmp))) {
+		char *m = purple_markup_linkify(*message);
+		elemGreen = g_list_find_custom(pr->msgs_green, m,
+		                               (GCompareFunc)&strcmp);
+		g_free(m);
+	}
+
+	if (!(elemRed = g_list_find_custom(pr->msgs_red,
+	                                   *message,
+	                                   (GCompareFunc)&strcmp))) {
+		char *m = purple_markup_linkify(*message);
+		elemRed = g_list_find_custom(pr->msgs_red, m,
+		                             (GCompareFunc)&strcmp);
+		g_free(m);
+	}
+
+	if (elemGreen && elemRed) {
+		purple_debug_warning(PLUGIN_ID, "msg could be green or red: %s\n",
+		                     *message);
+		next_img_id = img_id_yellow;
+		g_free(elemGreen->data);
+		pr->msgs_green = g_list_delete_link(pr->msgs_green, elemGreen);
+		g_free(elemRed->data);
+		pr->msgs_red = g_list_delete_link(pr->msgs_red, elemRed);
+	} else if (elemGreen) {
+		next_img_id = img_id_green;
+		g_free(elemGreen->data);
+		pr->msgs_green = g_list_delete_link(pr->msgs_green, elemGreen);
+	} else if (elemRed) {
+		next_img_id = img_id_red;
+		g_free(elemRed->data);
+		pr->msgs_red = g_list_delete_link(pr->msgs_red, elemRed);
+	} else {
+		next_img_id = img_id_yellow;
+	}
+
+	return FALSE;
+}
+
 static char *
 timestamp(PurpleConversation *conv, time_t mtime, gboolean show_date)
 {
 	PidginConversation *gtkconv;
 	char *markup;
 
+	if (0 == next_img_id)
+		return NULL;
+
 	if (!(gtkconv = PIDGIN_CONVERSATION(conv))) {
 		purple_debug_warning(PLUGIN_ID, "unable to get gtk conv handle\n");
 		return NULL;
 	}
 
-	if (!(markup = g_strdup_printf("<img id=\"%d\"> ", img_id_green))) {
+	if (!(markup = g_strdup_printf("<img id=\"%d\"> ", next_img_id))) {
 		purple_debug_warning(PLUGIN_ID, "unable to format markup\n");
 		return NULL;
 	}
@@ -534,6 +626,7 @@ timestamp(PurpleConversation *conv, time_t mtime, gboolean show_date)
 	gtk_imhtml_append_text_with_images((GtkIMHtml *)gtkconv->imhtml,
 	                                   markup, 0, NULL);
 	g_free(markup);
+	next_img_id = 0;
 
 	return NULL;
 }
@@ -543,6 +636,10 @@ quitting()
 {
 	purple_imgstore_unref_by_id(img_id_green);
 	img_id_green = 0;
+	purple_imgstore_unref_by_id(img_id_yellow);
+	img_id_yellow = 0;
+	purple_imgstore_unref_by_id(img_id_red);
+	img_id_red = 0;
 }
 
 static void
@@ -551,7 +648,12 @@ destroy_room(gpointer data)
 	struct gotrp_room *pr = data;
 
 	g_hash_table_destroy(pr->users);
+	g_list_free_full(pr->msgs_green, &g_free);
+	pr->msgs_green = NULL;
+	g_list_free_full(pr->msgs_red, &g_free);
+	pr->msgs_red = NULL;
 	gotr_leave(pr->room);
+	free(pr);
 }
 
 static gboolean
@@ -594,9 +696,14 @@ plugin_load(PurplePlugin *plugin)
 	                      PURPLE_CALLBACK(conv_created), NULL);
 	purple_signal_connect(conv, "deleting-conversation", plugin,
 	                      PURPLE_CALLBACK(conv_deleting), NULL);
-	purple_signal_connect(pidgin_conversations_get_handle(),
-	                      "conversation-timestamp", plugin,
-	                      PURPLE_CALLBACK(timestamp), NULL);
+	purple_signal_connect_priority(pidgin_conversations_get_handle(),
+	                               "conversation-timestamp", plugin,
+	                               PURPLE_CALLBACK(timestamp), NULL,
+	                               PURPLE_SIGNAL_PRIORITY_LOWEST);
+	purple_signal_connect_priority(pidgin_conversations_get_handle(),
+	                               "displaying-chat-msg", plugin,
+	                               PURPLE_CALLBACK(onDisplayingChat), NULL,
+	                               PURPLE_SIGNAL_PRIORITY_LOWEST);
 	purple_signal_connect(purple_get_core(),
 	                      "quitting", plugin,
 	                      PURPLE_CALLBACK(quitting), NULL);
@@ -606,6 +713,14 @@ plugin_load(PurplePlugin *plugin)
 	                                                    sizeof(green_png)),
 	                                           sizeof(green_png),
 	                                           NULL);
+	img_id_yellow = purple_imgstore_add_with_id(g_memdup(yellow_png,
+	                                                     sizeof(yellow_png)),
+	                                            sizeof(yellow_png),
+	                                            NULL);
+	img_id_red = purple_imgstore_add_with_id(g_memdup(red_png,
+	                                                  sizeof(red_png)),
+	                                         sizeof(red_png),
+	                                         NULL);
 
 	purple_debug_info(PLUGIN_ID, "plugin loaded\n");
 	return TRUE;
