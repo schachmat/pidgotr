@@ -729,39 +729,11 @@ plugin_load(PurplePlugin *plugin)
 static gboolean
 plugin_unload(PurplePlugin *plugin)
 {
-	void *conv = purple_conversations_get_handle();
-
 	g_hash_table_destroy(gotrp_rooms);
 	g_list_free_full(gotrp_msgcache, &g_free);
 	gotrp_msgcache = NULL;
 
-	purple_signal_disconnect(conv, "writing-chat-msg", plugin,
-	                         PURPLE_CALLBACK(writing_chat));
-	purple_signal_disconnect(conv, "receiving-im-msg", plugin,
-	                         PURPLE_CALLBACK(receiving_im));
-	purple_signal_disconnect(conv, "sending-chat-msg", plugin,
-	                         PURPLE_CALLBACK(sending_chat));
-	purple_signal_disconnect(conv, "receiving-chat-msg", plugin,
-	                         PURPLE_CALLBACK(receiving_chat));
-	purple_signal_disconnect(conv, "chat-buddy-joined", plugin,
-	                         PURPLE_CALLBACK(chat_user_joined));
-	purple_signal_disconnect(conv, "chat-buddy-left", plugin,
-	                         PURPLE_CALLBACK(chat_user_left));
-	purple_signal_disconnect(conv, "chat-joined", plugin,
-	                         PURPLE_CALLBACK(chat_joined));
-	purple_signal_disconnect(conv, "chat-left", plugin,
-	                         PURPLE_CALLBACK(chat_left));
-	purple_signal_disconnect(conv, "conversation-created", plugin,
-	                         PURPLE_CALLBACK(conv_created));
-	purple_signal_disconnect(conv, "deleting-conversation", plugin,
-	                         PURPLE_CALLBACK(conv_deleting));
-	purple_signal_disconnect(pidgin_conversations_get_handle(),
-	                         "conversation-timestamp", plugin,
-	                         PURPLE_CALLBACK(timestamp));
-	purple_signal_disconnect(purple_get_core(),
-	                         "quitting", plugin,
-	                         PURPLE_CALLBACK(quitting));
-
+	purple_signals_disconnect_by_handle(plugin);
 	quitting();
 
 	purple_debug_info(PLUGIN_ID, "plugin unloaded\n");
