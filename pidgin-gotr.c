@@ -59,7 +59,7 @@ static gboolean gotrp_originated_msg = FALSE;
 static GHashTable *gotrp_rooms = NULL;
 
 /** cache libgotr-generated group chat messages to prevent displaying them */
-static GHashTable *gotrp_msgcache = NULL;
+static GList *gotrp_msgcache = NULL;
 
 static int img_id_green = 0;
 
@@ -89,7 +89,7 @@ gotrp_send_all_cb(void *room_closure,
 		return 0;
 	}
 
-	g_hash_table_add(gotrp_msgcache, g_strdup(b64_msg));
+	gotrp_msgcache = g_list_prepend(gotrp_msgcache, g_strdup(b64_msg));
 
 	purple_conv_chat_send_with_flags(chat_conv,
 	                                 b64_msg,
@@ -319,8 +319,17 @@ writing_chat(PurpleAccount *account,
              PurpleConversation *conv,
              PurpleMessageFlags flags)
 {
-	if (g_hash_table_remove(gotrp_msgcache, *message))
+	GList *elem;
+
+	if ((elem = g_list_find_custom(gotrp_msgcache,
+	                               *message,
+	                               (GCompareFunc)&strcmp))) {
+		purple_debug_misc(PLUGIN_ID, "not writing to %s: %s\n",
+		                  conv->title, *message);
+		g_free(elem->data);
+		gotrp_msgcache = g_list_delete_link(gotrp_msgcache, elem);
 		return TRUE;
+	}
 
 	purple_debug_misc(PLUGIN_ID, "writing to %s: %s\n", conv->title, *message);
 	return FALSE;
@@ -563,13 +572,6 @@ plugin_load(PurplePlugin *plugin)
 		return FALSE;
 	}
 
-	if (!(gotrp_msgcache = g_hash_table_new_full(&g_str_hash,
-	                                             &g_str_equal,
-	                                             &g_free,
-	                                             NULL))) {
-		purple_debug_error(PLUGIN_ID, "failed to create msg cache\n");
-		return FALSE;
-	}
 
 	purple_signal_connect(conv, "writing-chat-msg", plugin,
 	                      PURPLE_CALLBACK(writing_chat), NULL);
@@ -614,7 +616,8 @@ plugin_unload(PurplePlugin *plugin)
 	void *conv = purple_conversations_get_handle();
 
 	g_hash_table_destroy(gotrp_rooms);
-	g_hash_table_destroy(gotrp_msgcache);
+	g_list_free_full(gotrp_msgcache, &g_free);
+	gotrp_msgcache = NULL;
 
 	purple_signal_disconnect(conv, "writing-chat-msg", plugin,
 	                         PURPLE_CALLBACK(writing_chat));
