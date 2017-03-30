@@ -1,8 +1,7 @@
 include config.mk
 
-SRC = pidgin-gotr.c gtk-ui.c
+SRC = pidgin-gotr.c
 LIB = pidgin-gotr.so.${MAJOR}.${MINOR}
-INC = gtk-ui.h
 OBJ = ${SRC:.c=.o}
 
 all: options ${LIB}
@@ -17,7 +16,7 @@ options:
 	@echo CC $<
 	@${CC} -c ${CFLAGS} $<
 
-${OBJ}: ${INC} config.mk
+${OBJ}: config.mk
 
 ${LIB}: ${OBJ}
 	@echo CC $<
