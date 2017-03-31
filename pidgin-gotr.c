@@ -504,6 +504,12 @@ onSendingChat(PurpleAccount *account,
 		return;
 	}
 
+	/* send unencrypted if gotr temporarily disabled */
+	if (NULL == purple_conversation_get_data(conv, "gotr-active")) {
+		pr->msgsRed = g_list_prepend(pr->msgsRed, g_strdup(*message));
+		return;
+	}
+
 	gotrpOriginatedMsg = TRUE;
 	if (gotr_send(pr->room, *message)) {
 		pr->msgsGreen = g_list_prepend(pr->msgsGreen, g_strdup(*message));
@@ -667,6 +673,72 @@ onChatUserLeft(PurpleConversation *conv,
 
 
 static void
+buttonToggled(GtkToggleButton *button, gpointer data)
+{
+	PurpleConversation *conv = data;
+	GtkLabel *label;
+	gboolean active;
+
+	/* invert, so that GOTR is disabled when the button is pressed/active */
+	active = !gtk_toggle_button_get_active(button);
+
+	if (!(label = purple_conversation_get_data(conv, "gotr-label"))) {
+		purple_debug_error(PLUGIN_ID, "unable to derive label\n");
+		return;
+	}
+
+	gtk_label_set_text(label, active ? "GOTR active" : "GOTR inactive");
+	purple_conversation_set_data(conv, "gotr-active", active ? label : NULL);
+}
+
+
+static void
+addUi(PurpleConversation *conv)
+{
+	PidginConversation *gtkconv;
+	GtkWidget *toolbar;
+	GtkWidget *button;
+	GtkWidget *bbox;
+	GtkWidget *label;
+	GList *children;
+
+	if (!(gtkconv = PIDGIN_CONVERSATION(conv))) {
+		purple_debug_error(PLUGIN_ID, "no gtk conversation\n");
+		return;
+	}
+
+	if (!(toolbar = gtkconv->toolbar)) {
+		purple_debug_error(PLUGIN_ID, "unable to derive toolbar widget\n");
+		return;
+	}
+
+	if (!(button = purple_conversation_get_data(conv, "gotr-button"))) {
+		button = gtk_toggle_button_new();
+		gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
+		bbox = gtk_hbox_new(FALSE, 0);
+		gtk_container_add(GTK_CONTAINER(button), bbox);
+		label = gtk_label_new("GOTR active");
+		gtk_box_pack_start(GTK_BOX(bbox), label, FALSE, FALSE, 0);
+		g_signal_connect(G_OBJECT(button),
+		                 "toggled",
+		                 G_CALLBACK(buttonToggled),
+		                 conv);
+		purple_conversation_set_data(conv, "gotr-button", button);
+		purple_conversation_set_data(conv, "gotr-label", label);
+		purple_conversation_set_data(conv, "gotr-active", label);
+	}
+
+	/* make sure button is visible in toolbar */
+	children = gtk_container_get_children(GTK_CONTAINER(toolbar));
+	if (!g_list_find(children, button)) {
+		gtk_box_pack_start(GTK_BOX(toolbar), button, FALSE, FALSE, 0);
+	}
+	g_list_free(children);
+	gtk_widget_show_all(button);
+}
+
+
+static void
 onChatJoined(PurpleConversation *conv)
 {
 	struct gotrp_room *pr;
@@ -747,6 +819,8 @@ onChatJoined(PurpleConversation *conv)
 		return;
 	}
 	g_free(fname);
+
+	addUi(conv);
 
 	if (!g_hash_table_insert(gotrpRooms, conv, pr)) {
 		/* unreachable */
