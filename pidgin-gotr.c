@@ -21,9 +21,11 @@
 
 #define PLUGIN_ID "gtk-gotr"
 
+#include <errno.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <time.h>
 
 #include <glib.h>
@@ -76,6 +78,13 @@ static int imgYellowID = 0;
 
 /** id of the red lock icon image id */
 static int imgRedID = 0;
+
+/** child PID of keygen process */
+static pid_t genpid = -1;
+
+/** where to put our "keygen done" message */
+static PurpleConversation *gotrKeygenDoneConv = NULL;
+
 
 static void
 onGotrLog(const char *format,
@@ -238,6 +247,146 @@ buildConfWidget(PurplePlugin *plugin)
 
 	gtk_widget_show_all(vbox);
 	return vbox;
+}
+
+
+gboolean
+checkKeygenDone(gpointer data)
+{
+	int status = 0;
+	pid_t ret;
+
+	errno = 0;
+	if (0 == (ret = waitpid(genpid, &status, WNOHANG)))
+		return TRUE; /* still running, check back in another second */
+
+	if (0 != errno && ECHILD != errno)
+		purple_debug_error(PLUGIN_ID,
+		                   "checkKeygenDone: waitpid: %s\n",
+		                   strerror(errno));
+	else if (genpid == ret && (!WIFEXITED(status) || 0 != WEXITSTATUS(status)))
+		/* this will probably never be called since pidgin seems to SIG_IGN the
+		 * SIGCHLD and thus we don't get the exit status */
+		purple_debug_error(PLUGIN_ID,
+		                   "keygen process returned error code: %d\n",
+		                   WEXITSTATUS(status));
+
+	/* close dialog even on errors so users can resume using pidgin */
+	gtk_widget_destroy(data);
+	genpid = -1;
+
+	/* inform user */
+	if (gotrKeygenDoneConv) {
+		purple_conversation_write(gotrKeygenDoneConv,
+		                          NULL,
+		                          "GOTR key generation done!\n"
+		                          "Please rejoin this chat to enable GOTR.",
+		                          PURPLE_MESSAGE_SYSTEM,
+		                          time(NULL));
+	}
+	gotrKeygenDoneConv = NULL;
+	return FALSE;
+}
+
+
+void
+showGenkeyDialog()
+{
+	GtkWidget *d;
+
+	d = gtk_message_dialog_new(NULL,
+	                           0,
+	                           GTK_MESSAGE_INFO,
+	                           GTK_BUTTONS_NONE,
+	                           "Please wait until your secret key is ready.");
+	if (!d)
+		purple_debug_warning(PLUGIN_ID, "could not create genkey dialog\n");
+	else
+		gtk_widget_show(d);
+
+	/* check every second if we are done generating our key */
+	g_timeout_add(1000, &checkKeygenDone, d);
+}
+
+
+char *
+strToHex(const char *buffer) {
+	char *ret;
+	size_t buffer_length = strlen(buffer);
+
+	if (!(ret = calloc(2 * buffer_length + 1, 1)))
+		return NULL;
+
+	for (size_t i = 0; i < buffer_length; i++)
+		snprintf(&ret[2*i], 3, "%02X", buffer[i]);
+
+	return ret;
+}
+
+
+gchar *
+buildKeyFname(PurpleAccount *acc)
+{
+	gchar *aname;
+	gchar *fname;
+	gchar *ret;
+
+	if (!acc || !acc->username) {
+		purple_debug_error(PLUGIN_ID, "unable to derive account name\n");
+		return NULL;
+	}
+
+	if (!(aname = strToHex(acc->username))) {
+		purple_debug_warning(PLUGIN_ID, "buildKeyFname: out of memory\n");
+		return NULL;
+	}
+
+	if (!(fname = g_strdup_printf("gotr_%s.skey", aname))) {
+		purple_debug_warning(PLUGIN_ID, "buildKeyFname: out of memory 2\n");
+		free(aname);
+		return NULL;
+	}
+	free(aname);
+
+	if (!(ret = g_build_filename(purple_user_dir(), fname, NULL))) {
+		purple_debug_warning(PLUGIN_ID, "buildKeyFname: out of memory 3\n");
+		g_free(fname);
+		return NULL;
+	}
+	g_free(fname);
+
+	return ret;
+}
+
+
+void
+createPrivkey(PurpleAccount *acc)
+{
+	gchar *afname;
+
+	if (-1 != genpid) {
+		purple_debug_warning(PLUGIN_ID, "can only gen one key at a time\n");
+		return;
+	}
+
+	if (!(afname = buildKeyFname(acc))) {
+		purple_debug_error(PLUGIN_ID, "buildKeyFname failed\n");
+		return;
+	}
+
+	switch (genpid = fork()) {
+	case -1: /* error */
+		purple_debug_error(PLUGIN_ID, "unable to fork keygen process\n");
+		break;
+	case 0: /* child */
+		execlp("gotr_genkey", "gotr_genkey", afname, (char *)NULL);
+		/* can not log from new proc. die and log after waitpid() in parent */
+		_exit(1);
+	default: /* parent */
+		showGenkeyDialog(genpid);
+	}
+
+	g_free(afname);
 }
 
 
@@ -465,6 +614,11 @@ onChatUserJoined(PurpleConversation       *conv,
 		return;
 	}
 
+	if (g_hash_table_contains(pr->users, name)) {
+		purple_debug_misc(PLUGIN_ID, "user already in chat\n");
+		return;
+	}
+
 	if (!(usr = g_strdup(name))) {
 		purple_debug_error(PLUGIN_ID, "unable to malloc username\n");
 		return;
@@ -516,6 +670,7 @@ static void
 onChatJoined(PurpleConversation *conv)
 {
 	struct gotrp_room *pr;
+	gchar *fname;
 
 	purple_debug_info(PLUGIN_ID, "onChatJoined: %s\n", conv->title);
 
@@ -524,6 +679,7 @@ onChatJoined(PurpleConversation *conv)
 		return;
 	}
 
+	/* create hash table before joining to make sure we have memory available */
 	if (!(pr->users = g_hash_table_new_full(&g_str_hash,
 	                                        &g_str_equal,
 	                                        &g_free,
@@ -533,17 +689,55 @@ onChatJoined(PurpleConversation *conv)
 		return;
 	}
 
+	/* derive private key file name for account joining the chat */
+	if (!conv->account) {
+		purple_debug_error(PLUGIN_ID, "unable to derive account\n");
+		return;
+	}
+	if (!(fname = buildKeyFname(conv->account))) {
+		purple_debug_error(PLUGIN_ID, "buildKeyFname failed\n");
+		return;
+	}
+
 	pr->room = gotr_join(&onGotrSendAll,
 	                     &onGotrSendUser,
 	                     &onGotrRecvUser,
 	                     conv,
-	                     NULL);  /* autogen privkey for now */
+	                     fname);
 	if (!pr->room) {
-		purple_debug_error(PLUGIN_ID, "got NULL room when joining\n");
+		g_free(fname);
 		g_hash_table_destroy(pr->users);
 		free(pr);
+
+		if (-1 == genpid) {
+			/* no other keygen in process, can generate new one. This additional
+			 * check is needed to prevent gotrKeygenDoneConv from being
+			 * overwritten in case another process is already on. */
+			char *buf;
+
+			buf = g_strdup_printf("No GOTR private key was found for %s.\n"
+			                      "A new key is being generated currently...",
+			                      conv->account->username);
+			purple_conversation_write(conv,
+			                          NULL,
+			                          buf,
+			                          PURPLE_MESSAGE_SYSTEM,
+			                          time(NULL));
+			g_free(buf);
+			purple_debug_info(PLUGIN_ID, "starting private key generation\n");
+			gotrKeygenDoneConv = conv;
+			createPrivkey(conv->account);
+		} else {
+			purple_conversation_write(conv,
+			                          NULL,
+			                          "Another GOTR key is being generated.\n"
+			                          "Please try to rejoin this chat later!",
+			                          PURPLE_MESSAGE_SYSTEM,
+			                          time(NULL));
+		}
 		return;
 	}
+	g_free(fname);
 
 	if (!g_hash_table_insert(gotrpRooms, conv, pr)) {
 		/* unreachable */
