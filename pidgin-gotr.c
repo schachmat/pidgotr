@@ -777,7 +777,7 @@ static PurplePluginInfo info = {
 	"Group OTR",
 	GOTRP_VERSION_MAJOR "." GOTRP_VERSION_MINOR,
 
-	"GOTR Plugin",
+	"Off-the-Record for group chats",
 	"GOTR Plugin",
 	"Markus Teich <teichm@in.tum.de>",
 	"https://github.com/schachmat/gotr",
