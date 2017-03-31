@@ -671,8 +671,17 @@ onChatJoined(PurpleConversation *conv)
 {
 	struct gotrp_room *pr;
 	gchar *fname;
+	PurpleConnection *gc;
+	PurplePlugin *prpl;
 
 	purple_debug_info(PLUGIN_ID, "onChatJoined: %s\n", conv->title);
+
+	if ((gc = purple_conversation_get_gc(conv)) &&
+	    (prpl = purple_connection_get_prpl(gc)) &&
+	    0 != strcmp("XMPP", purple_plugin_get_name(prpl))) {
+		purple_debug_misc(PLUGIN_ID, "GOTR only supports XMPP chat rooms\n");
+		return;
+	}
 
 	if (!(pr = calloc(1, sizeof(struct gotrp_room)))) {
 		purple_debug_error(PLUGIN_ID, "failed to alloc memory for room\n");
