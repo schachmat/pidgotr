@@ -454,11 +454,6 @@ onChatUserJoined(PurpleConversation       *conv,
 	char              *usr;
 
 	/* we don't need to handle ourselves joining the chat -> ignore signal */
-	/**TODO: check if we can improve key exchange if the joining user also
-	 * starts sending messages instead of waiting for other users. Use the
-	 * strcmp version of the line to accept this signal for already existing
-	 * other users in a chat we just joined ourselves. */
-/*	if (0 == strcmp(PURPLE_CONV_CHAT(conv)->nick, name)) */
 	if (!newArrival)
 		return;
 
