@@ -672,6 +672,25 @@ onChatUserLeft(PurpleConversation *conv,
 }
 
 
+static gboolean
+buttonPressed(GtkWidget *button, GdkEventButton *event, gpointer data)
+{
+	PurpleConversation *conv = data;
+	GtkWidget *menu;
+
+	if (event->type != GDK_BUTTON_PRESS || event->button != 3)
+		return FALSE;
+
+	if (!(menu = purple_conversation_get_data(conv, "gotr-menu"))) {
+		purple_debug_error(PLUGIN_ID, "unable to derive menu\n");
+		return FALSE;
+	}
+
+	gtk_menu_popup(GTK_MENU(menu), NULL, NULL, NULL, NULL, 3, event->time);
+	return TRUE;
+}
+
+
 static void
 buttonToggled(GtkToggleButton *button, gpointer data)
 {
@@ -693,6 +712,43 @@ buttonToggled(GtkToggleButton *button, gpointer data)
 
 
 static void
+onRekey(GtkWidget *widget, gpointer data)
+{
+	struct gotrp_room *pr;
+
+	if (!(pr = g_hash_table_lookup(gotrpRooms, data))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return;
+	}
+
+	gotr_rekey(pr->room, NULL);
+}
+
+
+static GtkWidget *
+buildMenu(PurpleConversation *conv)
+{
+	GtkWidget *ret;
+	GtkWidget *eRekey;
+
+	ret = gtk_menu_new();
+
+	eRekey = gtk_menu_item_new_with_mnemonic("_Rekey");
+
+	gtk_menu_shell_append(GTK_MENU_SHELL(ret), eRekey);
+
+	gtk_widget_show(eRekey);
+
+	gtk_signal_connect(GTK_OBJECT(eRekey),
+	                   "activate",
+	                   GTK_SIGNAL_FUNC(onRekey),
+	                   conv);
+
+	return ret;
+}
+
+
+static void
 addUi(PurpleConversation *conv)
 {
 	PidginConversation *gtkconv;
@@ -700,6 +756,7 @@ addUi(PurpleConversation *conv)
 	GtkWidget *button;
 	GtkWidget *bbox;
 	GtkWidget *label;
+	GtkWidget *menu;
 	GList *children;
 
 	if (!(gtkconv = PIDGIN_CONVERSATION(conv))) {
@@ -715,15 +772,25 @@ addUi(PurpleConversation *conv)
 	if (!(button = purple_conversation_get_data(conv, "gotr-button"))) {
 		button = gtk_toggle_button_new();
 		gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
-		bbox = gtk_hbox_new(FALSE, 0);
-		gtk_container_add(GTK_CONTAINER(button), bbox);
-		label = gtk_label_new("GOTR active");
-		gtk_box_pack_start(GTK_BOX(bbox), label, FALSE, FALSE, 0);
 		g_signal_connect(G_OBJECT(button),
 		                 "toggled",
 		                 G_CALLBACK(buttonToggled),
 		                 conv);
+		g_signal_connect(G_OBJECT(button),
+		                 "button-press-event",
+		                 G_CALLBACK(buttonPressed),
+		                 conv);
+
+		bbox = gtk_hbox_new(FALSE, 0);
+		gtk_container_add(GTK_CONTAINER(button), bbox);
+
+		label = gtk_label_new("GOTR active");
+		gtk_box_pack_start(GTK_BOX(bbox), label, FALSE, FALSE, 0);
+
+		menu = buildMenu(conv);
+
 		purple_conversation_set_data(conv, "gotr-button", button);
+		purple_conversation_set_data(conv, "gotr-menu", menu);
 		purple_conversation_set_data(conv, "gotr-label", label);
 		purple_conversation_set_data(conv, "gotr-active", label);
 	}
