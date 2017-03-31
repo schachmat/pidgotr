@@ -487,7 +487,7 @@ onSendingChat(PurpleAccount *account,
 	if (gotrpOriginatedMsg)
 		return;
 
-	purple_debug_info(PLUGIN_ID, "onSendingChat: %s\n", *message);
+	purple_debug_info(PLUGIN_ID, "onSendingChat\n");
 
 	if (!(gc = purple_account_get_connection(account))) {
 		purple_debug_error(PLUGIN_ID, "failed to derive connection\n");
@@ -540,7 +540,7 @@ onWritingChat(PurpleAccount      *account,
 		return TRUE;
 	}
 
-	purple_debug_misc(PLUGIN_ID, "writing to %s: %s\n", conv->title, *message);
+	purple_debug_misc(PLUGIN_ID, "writing to %s\n", conv->title);
 	return FALSE;
 }
 
