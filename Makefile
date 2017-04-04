@@ -16,7 +16,7 @@ options:
 	@echo CC $<
 	@${CC} -c ${CFLAGS} $<
 
-${OBJ}: config.mk
+${OBJ}: config.mk icons.h
 
 ${LIB}: ${OBJ}
 	@echo CC $<
