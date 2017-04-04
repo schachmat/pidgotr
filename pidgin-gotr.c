@@ -390,6 +390,64 @@ createPrivkey(PurpleAccount *acc)
 }
 
 
+static GtkWidget *
+gotrIcon(GtkWidget *image, const guint8 *icon)
+{
+	GdkPixbuf *pb = NULL;
+
+	if (!(pb = gdk_pixbuf_new_from_inline(-1, icon, FALSE, NULL))) {
+		purple_debug_error(PLUGIN_ID, "unable to create pixbuf\n");
+		return NULL;
+	}
+
+	if (image)
+		gtk_image_set_from_pixbuf(GTK_IMAGE(image), pb);
+	else
+		image = gtk_image_new_from_pixbuf(pb);
+
+	g_object_unref(pb);
+	gtk_widget_set_sensitive(image, TRUE);
+	return image;
+}
+
+
+static void
+updateIcon(PurpleConversation *conv)
+{
+	enum gotr_state    state;
+	GtkWidget          *icon;
+	struct gotrp_room  *pr;
+
+	if (!(pr = g_hash_table_lookup(gotrpRooms, conv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return;
+	}
+
+	if (!(icon = purple_conversation_get_data(conv, "gotr-icon"))) {
+		purple_debug_warning(PLUGIN_ID, "unable to retrieve gtk icon\n");
+		return;
+	}
+
+	/* use disabled icon */
+	if (NULL == purple_conversation_get_data(conv, "gotr-active")) {
+		gotrIcon(icon, imgRed);
+		return;
+	}
+
+	state = gotr_get_state(pr->room, NULL);
+	if (gotr_state_private == state)
+		gotrIcon(icon, imgGreen);
+	else if (gotr_state_stage3 == state)
+		gotrIcon(icon, imgStage3);
+	else if (gotr_state_stage2 == state)
+		gotrIcon(icon, imgStage2);
+	else if (gotr_state_stage1 == state)
+		gotrIcon(icon, imgStage1);
+	else
+		gotrIcon(icon, imgRed);
+}
+
+
 static gboolean
 onReceivingIM(PurpleAccount      *account,
               char               **sender,
@@ -450,6 +508,7 @@ onReceivingIM(PurpleAccount      *account,
 			g_free(usr);
 			return FALSE;
 		}
+		updateIcon(cconv);
 		g_free(src);
 		return TRUE;
 	}
@@ -466,11 +525,10 @@ onReceivingIM(PurpleAccount      *account,
 	if (!g_hash_table_replace(pr->users, g_strdup(usr), user))
 		/* unreachable */
 		purple_debug_warning(PLUGIN_ID, "unreachable: user replaced\n");
+
+	updateIcon(cconv);
 	g_free(src);
 	return TRUE;
-
-	/* unreachable, just in case… */
-	return FALSE;
 }
 
 
@@ -708,6 +766,8 @@ buttonToggled(GtkToggleButton *button, gpointer data)
 
 	gtk_label_set_text(label, active ? "GOTR active" : "GOTR inactive");
 	purple_conversation_set_data(conv, "gotr-active", active ? label : NULL);
+
+	updateIcon(conv);
 }
 
 
@@ -754,9 +814,6 @@ addUi(PurpleConversation *conv)
 	PidginConversation *gtkconv;
 	GtkWidget *toolbar;
 	GtkWidget *button;
-	GtkWidget *bbox;
-	GtkWidget *label;
-	GtkWidget *menu;
 	GList *children;
 
 	if (!(gtkconv = PIDGIN_CONVERSATION(conv))) {
@@ -770,6 +827,11 @@ addUi(PurpleConversation *conv)
 	}
 
 	if (!(button = purple_conversation_get_data(conv, "gotr-button"))) {
+		GtkWidget *bbox;
+		GtkWidget *icon;
+		GtkWidget *label;
+		GtkWidget *menu;
+
 		button = gtk_toggle_button_new();
 		gtk_button_set_relief(GTK_BUTTON(button), GTK_RELIEF_NONE);
 		g_signal_connect(G_OBJECT(button),
@@ -784,6 +846,9 @@ addUi(PurpleConversation *conv)
 		bbox = gtk_hbox_new(FALSE, 0);
 		gtk_container_add(GTK_CONTAINER(button), bbox);
 
+		if ((icon = gotrIcon(NULL, imgRed)))
+			gtk_box_pack_start(GTK_BOX(bbox), icon, TRUE, FALSE, 0);
+
 		label = gtk_label_new("GOTR active");
 		gtk_box_pack_start(GTK_BOX(bbox), label, FALSE, FALSE, 0);
 
@@ -791,6 +856,7 @@ addUi(PurpleConversation *conv)
 
 		purple_conversation_set_data(conv, "gotr-button", button);
 		purple_conversation_set_data(conv, "gotr-menu", menu);
+		purple_conversation_set_data(conv, "gotr-icon", icon);
 		purple_conversation_set_data(conv, "gotr-label", label);
 		purple_conversation_set_data(conv, "gotr-active", label);
 	}
@@ -1071,17 +1137,17 @@ pluginLoad(PurplePlugin *plugin)
 	                      PURPLE_CALLBACK(quitting), NULL);
 
 	/* load icons to purple imgstore */
-	imgGreenID = purple_imgstore_add_with_id(g_memdup(green_png,
-	                                                  sizeof(green_png)),
-	                                         sizeof(green_png),
+	imgGreenID = purple_imgstore_add_with_id(g_memdup(iconGreenPng,
+	                                                  sizeof(iconGreenPng)),
+	                                         sizeof(iconGreenPng),
 	                                         NULL);
-	imgYellowID = purple_imgstore_add_with_id(g_memdup(yellow_png,
-	                                                   sizeof(yellow_png)),
-	                                          sizeof(yellow_png),
+	imgYellowID = purple_imgstore_add_with_id(g_memdup(iconYellowPng,
+	                                                   sizeof(iconYellowPng)),
+	                                          sizeof(iconYellowPng),
 	                                          NULL);
-	imgRedID = purple_imgstore_add_with_id(g_memdup(red_png,
-	                                                sizeof(red_png)),
-	                                       sizeof(red_png),
+	imgRedID = purple_imgstore_add_with_id(g_memdup(iconRedPng,
+	                                                sizeof(iconRedPng)),
+	                                       sizeof(iconRedPng),
 	                                       NULL);
 
 	purple_debug_info(PLUGIN_ID, "plugin loaded\n");
