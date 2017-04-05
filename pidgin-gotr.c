@@ -724,6 +724,8 @@ onChatUserLeft(PurpleConversation *conv,
 
 	gotr_user_left(pr->room, user);
 
+	updateIcon(conv);
+
 	if (!g_hash_table_remove(pr->users, name))
 		/* unreachable */
 		purple_debug_warning(PLUGIN_ID, "unreachable: unable to remove user\n");
