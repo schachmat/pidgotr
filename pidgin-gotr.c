@@ -589,6 +589,11 @@ onReceivingChat(PurpleAccount      *account,
 {
 	struct gotrp_room *pr;
 
+	if (!(pr = g_hash_table_lookup(gotrpRooms, conv))) {
+		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
+		return FALSE;
+	}
+
 	if (*flags & PURPLE_MESSAGE_DELAYED) {
 		purple_debug_misc(PLUGIN_ID,
 		                  "ignoring received delayed message from %s in %s "
@@ -601,17 +606,15 @@ onReceivingChat(PurpleAccount      *account,
 		 * false-positive matches hidden from the user is better than confusing
 		 * them with the ?GOTR? messages each time they join a chat where the
 		 * past messages are resent. */
-		return 0 == strncmp("?GOTR?", *message, strlen("?GOTR?"));
+		if (0 == strncmp("?GOTR?", *message, strlen("?GOTR?")))
+			return TRUE;
+		pr->msgsRed = g_list_prepend(pr->msgsRed, g_strdup(*message));
+		return FALSE;
 	}
 
 	/* ignore own messages */
 	if (*flags & PURPLE_MESSAGE_SEND) {
 		purple_debug_misc(PLUGIN_ID, "ignoring own msg: %s\n", *message);
-		return FALSE;
-	}
-
-	if (!(pr = g_hash_table_lookup(gotrpRooms, conv))) {
-		purple_debug_misc(PLUGIN_ID, "gotr not enabled in this chat\n");
 		return FALSE;
 	}
 
