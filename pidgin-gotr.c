@@ -87,8 +87,7 @@ static PurpleConversation *gotrKeygenDoneConv = NULL;
 
 
 static void
-onGotrLog(const char *format,
-          ...)
+onGotrLog(const char *format, ...)
 {
 	va_list      ap;
 	const size_t mlen = 2048;
