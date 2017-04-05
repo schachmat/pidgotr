@@ -929,6 +929,13 @@ onChatJoined(PurpleConversation *conv)
 	}
 	g_free(fname);
 
+	purple_conversation_write(conv,
+	                          NULL,
+	                          "GOTR has been enabled in this chat. "
+	                          "See <a href=\"https://github.com/schachmat/pidgotr/wiki/Icons\">here</a> "
+	                          "for an explanation of the icons.",
+	                          PURPLE_MESSAGE_SYSTEM,
+	                          time(NULL));
 	addUi(conv);
 
 	if (!g_hash_table_insert(gotrpRooms, conv, pr)) {
